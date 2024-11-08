@@ -42,3 +42,33 @@ class MultimodalFusion(nn.Module):
         fused = self.fusion_layer(combined)
 
         return fused
+
+class InterruptionPredictor(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.modality_encoder = ModalityEncoder(config)
+        self.fusion_network = MultimodalFusion(config)
+
+        self.prediction_head = nn.Sequential(
+            nn.Linear(config.hidden_size, config.hidden_size // 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(config.hidden_size // 2, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, video, audio, text, attention_mask = None):
+
+        video_feat, audio_feat, text_feat = self.modality_encoder(
+            video, audio, text, attention_mask
+        )
+
+        fused_feat = self.fusion_network(
+            video_feat,
+            audio_feat,
+            text_feat
+        )
+
+        interruption_rate = self.regression_head(fused_feat)
+
+        return interruption_rate

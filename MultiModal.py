@@ -57,19 +57,36 @@ class ModalityEncoder(nn.Module):
             nn.Dropout(0.2)
         )
 
-        self.text_encoder = AutoModel.from_pretrained('bert-base-uncase')
-        self.text_projection = nn.Linear(768, config.hidden_size)
+        self.text_encoder = AutoModel.from_pretrained('distilbert-base-uncased')
+        self.text_projection = nn.Sequential(
+            nn.Linear(768, config.hidden_size),
+            nn.LayerNorm(config.hidden_size),
+            nn.Dropout(0.1)
+        )
 
+        self.pos_encoder = PositionalEncoding(config.hidden_size)
+        self.layer_norm = nn.LayerNorm(config.hidden_size)
+
+
+    @autocast
     def forward(self, video, audio, text, attention_mask = None):
 
-        video_feat = self.video_encoder(video)
+        batch_size = video.size(0)
+        video_feat = self.video_encoder(video.view(-1,3, 224, 224))
+        video_feat = video_feat.view(batch_size, -1, self.config.hidden_size)
+        video_feat = self.pos_encoder(video_feat)
+        video_feat = self.layer_norm(video_feat)
+
+
         audio_feat = self.audio_encoder(audio)
+        audio_feat = self.layer_norm(audio_feat)
 
         text_feat = self.text_encoder(
             input_ids = text,
             attention_mask = attention_mask
         ).last_hidden_state[:, 0, :]
         text_feat = self.text_projection(text_feat)
+        text_feat = self.layer_norm(text_feat)
 
         return video_feat, audio_feat, text_feat
 
@@ -80,8 +97,18 @@ class CrossModalAttention(nn.Module):
         self.attention = nn.MultiheadAttention(
             embed_dim= config.hidden_size,
             num_heads = 8,
-            dropout=0.1
+            dropout=0.1,
+            batch_first= True
         )
 
-    def forward(self, query, key, value):
-        return self.attention(query, key, value)[0]
+        self.layer_norm = nn.LayerNorm(config.hidden_size)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, query, key, value, key_padding_mask= None):
+        attn_output, _ = self.attention(
+            query, key, value,
+            key_padding_mask = key_padding_mask,
+            need_weights = False
+        )
+
+        return self.layer_norm(query + self.dropout(attn_output))

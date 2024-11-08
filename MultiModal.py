@@ -50,3 +50,14 @@ class ModalityEncoder(nn.Module):
         return video_feat, audio_feat, text_feat
 
 
+class CrossModalAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.attention = nn.MultiheadAttention(
+            embed_dim= config.hidden_size,
+            num_heads = 8,
+            dropout=0.1
+        )
+
+    def forward(self, query, key, value):
+        return self.attention(query, key, value)[0]

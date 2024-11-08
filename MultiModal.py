@@ -28,8 +28,12 @@ class ModalityEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        self.video_encoder = models.video.r3d_18(pretrained=True)
-        self.video_encoder.fc = nn.Linear(512, config.hidden_size)
+        self.video_encoder = models.efficientnet_b0(pretrained=True)
+        self.video_encoder.classifier = nn.Sequential(
+            nn.Dropout(p = 0.2, inplace = True),
+            nn.Linear(1280, config.hidden_size)
+        )
+
 
         self.audio_encoder = nn.Sequential(
             torchaudio.transforms.MelSpectrogram(
@@ -37,16 +41,20 @@ class ModalityEncoder(nn.Module):
                 n_fft = 400,
                 win_length=400,
                 hop_length=160,
-                n_mels=80
+                n_mels=80,
+                normalized=True
             ),
-            nn.Conv2d(1, 32, kernel_size=3, stride= 1, padding = 1),
+            nn.BatchNorm2d(1),
+            nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(32, 64, kernel_size=3, stride = 1, padding=1),
+            nn.BatchNorm2d(32),
+            nn.Conv2d(32, 64, kernel_size=3, stride =2, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
+            nn.BatchNorm2d(64),
+            nn.AdaptiveAvgPool2d((4,4)),
             nn.Flatten(),
-            nn.Linear(64 * 20 *20, config.hidden_size)
+            nn.Linear(64 * 16, config.hidden_size),
+            nn.Dropout(0.2)
         )
 
         self.text_encoder = AutoModel.from_pretrained('bert-base-uncase')

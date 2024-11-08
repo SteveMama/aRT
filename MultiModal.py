@@ -32,3 +32,21 @@ class ModalityEncoder(nn.Module):
             nn.Flatten(),
             nn.Linear(64 * 20 *20, config.hidden_size)
         )
+
+        self.text_encoder = AutoModel.from_pretrained('bert-base-uncase')
+        self.text_projection = nn.Linear(768, config.hidden_size)
+
+    def forward(self, video, audio, text, attention_mask = None):
+
+        video_feat = self.video_encoder(video)
+        audio_feat = self.audio_encoder(audio)
+
+        text_feat = self.text_encoder(
+            input_ids = text,
+            attention_mask = attention_mask
+        ).last_hidden_state[:, 0, :]
+        text_feat = self.text_projection(text_feat)
+
+        return video_feat, audio_feat, text_feat
+
+

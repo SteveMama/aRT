@@ -56,7 +56,7 @@ def create_audience_feat(df):
 
 def preprocess(df):
 
-    df['view_complete_data_rate_interruption'].fillna(df['view_complete_data_rate_interruption'].mean(), inplace = True)
+    df['view_completion_data_rate_interruption'].fillna(df['view_completion_data_rate_interruption'].mean(), inplace = True)
 
     # IQR Method implementation
 
@@ -119,4 +119,43 @@ def preprocess_data(file_path):
                                                         test_size=0.2,
                                                         random_state=42)
 
-    return X_train, X_test, y_train, df
+    return X_train, X_test, y_train, y_test, df
+
+
+def visualize_preprocessed_data(df):
+    plt.figure(figsize=(15, 10))
+
+    # Distribution of interruption rate
+    plt.subplot(2, 2, 1)
+    sns.histplot(data=df, x='view_completion_data_rate_interruption')
+    plt.title('Distribution of Interruption Rate')
+
+    # Interruption rate by time slot
+    plt.subplot(2, 2, 2)
+    sns.boxplot(data=df, x='time_slot', y='view_completion_data_rate_interruption')
+    plt.title('Interruption Rate by Time Slot')
+    plt.xticks(rotation=45)
+
+    # Correlation heatmap
+    plt.subplot(2, 2, 3)
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    sns.heatmap(df[numeric_cols].corr(), annot=True, cmap='coolwarm', fmt='.2f')
+    plt.title('Correlation Heatmap')
+
+    plt.tight_layout()
+    plt.show()
+
+
+# Usage
+if __name__ == "__main__":
+    file_path = "interruption_rate_20192020.csv"
+    X_train, X_test, y_train, y_test, preprocessed_df = preprocess_data(file_path)
+
+    print("\nPreprocessed data shapes:")
+    print("X_train shape:", X_train.shape)
+    print("X_test shape:", X_test.shape)
+    print("y_train shape:", y_train.shape)
+    print("y_test shape:", y_test.shape)
+
+
+    visualize_preprocessed_data(preprocessed_df)

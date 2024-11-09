@@ -7,13 +7,18 @@ class MultimodalFusion(nn.Module):
             CrossModalAttention(config) for _ in range(3)
         ])
 
-
         self.fusion_layer = nn.Sequential(
-            nn.Linear(config.hidden_size * 3, config.hidden_size),
+            nn.Linear(config.hidden_size * 3, config.hidden_size * 2),
             nn.ReLU(),
-            nn.Dropout(0.1)
-
+            nn.BatchNorm1d(config.hidden_size * 2),
+            nn.Dropout(0.1),
+            nn.Linear(config.hidden_size * 2, config.hidden_size),
+            nn.LayerNorm(config.hidden_size)
         )
+
+        self.residual_projection = nn.Linear(config.hidden_size * 3, config.hidden_size)
+
+
 
     def forward(self, video_feat, audio_feat, text_feat):
         video_attn = self.cross_attention_layers[0](
@@ -39,6 +44,7 @@ class MultimodalFusion(nn.Module):
             dim =-1
         )
 
+        residual = self.residual_projection(combined)
         fused = self.fusion_layer(combined)
 
         return fused
@@ -52,11 +58,17 @@ class InterruptionPredictor(nn.Module):
         self.prediction_head = nn.Sequential(
             nn.Linear(config.hidden_size, config.hidden_size // 2),
             nn.ReLU(),
+            nn.BatchNorm1d(config.hidden_size // 2),
             nn.Dropout(0.1),
-            nn.Linear(config.hidden_size // 2, 1),
+            nn.Linear(config.hidden_size // 2, config.hidden_size // 4),
+            nn.ReLU(),
+            nn.BatchNorm1d(config.hidden_size // 4),
+            nn.Dropout(0.1),
+            nn.Linear(config.hidden_size // 4, 1),
             nn.Sigmoid()
         )
 
+    @autocast
     def forward(self, video, audio, text, attention_mask = None):
 
         video_feat, audio_feat, text_feat = self.modality_encoder(

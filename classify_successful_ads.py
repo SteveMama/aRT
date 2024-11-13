@@ -1,9 +1,7 @@
-# Import required libraries
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
@@ -14,14 +12,13 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 
 
-class TVCommercialClassifier:
+class TVInterruptionRateAnalyzer:
     def __init__(self):
         self.models = {}
         self.results = {}
         self.best_model = None
-        self.threshold = 0.5  # Define successful commercials as those with interruption rate ≤ 0.5
 
-    def load_and_preprocess_data(self, file_path):
+    def load_and_analyze_data(self, file_path):
 
         df = pd.read_csv(file_path)
         print("Data shape:", df.shape)
@@ -30,8 +27,6 @@ class TVCommercialClassifier:
 
         df['airing_data_aired_at_et'] = pd.to_datetime(df['airing_data_aired_at_et'])
         df['hour'] = df['airing_data_aired_at_et'].dt.hour
-        df['day_of_week'] = df['airing_data_aired_at_et'].dt.dayofweek
-        df['month'] = df['airing_data_aired_at_et'].dt.month
 
 
         def get_time_slot(hour):
@@ -47,87 +42,86 @@ class TVCommercialClassifier:
         df['time_slot'] = df['hour'].apply(get_time_slot)
 
 
+        plt.figure(figsize=(15, 5))
+
+
+        plt.subplot(1, 3, 1)
+        sns.histplot(data=df, x='view_completion_data_rate_interruption',
+                     bins=50, kde=True)
+        plt.title('Distribution of Interruption Rate')
+
+
+        plt.subplot(1, 3, 2)
+        sns.boxplot(data=df, x='time_slot', y='view_completion_data_rate_interruption')
+        plt.title('Interruption Rate by Time Slot')
+        plt.xticks(rotation=45)
+
+
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        correlation_matrix = df[numeric_cols].corr()
+
+
+        plt.subplot(1, 3, 3)
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f')
+        plt.title('Correlation Heatmap')
+        plt.xticks(rotation=45)
+        plt.yticks(rotation=45)
+
+        plt.tight_layout()
+        plt.show()
+
+        return df
+
+    def preprocess_data(self, df):
+
+        df['day_of_week'] = df['airing_data_aired_at_et'].dt.dayofweek
+        df['month'] = df['airing_data_aired_at_et'].dt.month
+
+
+        imputer = SimpleImputer(strategy='mean')
+        numerical_cols = ['airing_data_spend_estimated', 'audience_data_impressions']
+        df[numerical_cols] = imputer.fit_transform(df[numerical_cols])
+
+
         df['cost_per_impression'] = df['airing_data_spend_estimated'] / df['audience_data_impressions']
-        df['spend_category'] = pd.qcut(df['airing_data_spend_estimated'],
-                                       q=5,
-                                       labels=['very_low', 'low', 'medium', 'high', 'very_high'])
-
-
-        df['audience_category'] = pd.qcut(df['audience_data_impressions'],
-                                          q=5,
-                                          labels=['very_small', 'small', 'medium', 'large', 'very_large'])
-
-
-        for col in df.columns:
-            if df[col].dtype in ['float64', 'int64']:
-                df[col].fillna(df[col].mean(), inplace=True)
-            else:
-                df[col].fillna(df[col].mode()[0], inplace=True)
-
-
-        df['is_successful'] = (df['view_completion_data_rate_interruption'] <= self.threshold).astype(int)
 
 
         le = LabelEncoder()
-        categorical_cols = ['brand_data_name', 'time_slot', 'spend_category', 'audience_category']
+        categorical_cols = ['brand_data_name', 'time_slot']
         for col in categorical_cols:
             df[f'{col}_encoded'] = le.fit_transform(df[col])
-
-
-        scaler = StandardScaler()
-        numerical_cols = ['airing_data_spend_estimated', 'audience_data_impressions',
-                          'cost_per_impression', 'hour', 'day_of_week', 'month']
-        df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
 
 
         features = ['hour', 'day_of_week', 'month',
                     'airing_data_spend_estimated', 'audience_data_impressions',
                     'cost_per_impression', 'brand_data_name_encoded',
-                    'time_slot_encoded', 'spend_category_encoded',
-                    'audience_category_encoded']
+                    'time_slot_encoded']
 
         X = df[features]
-        y = df['is_successful']
+        y = df['view_completion_data_rate_interruption']
 
-        return train_test_split(X, y, test_size=0.2, random_state=42), df
-
-    def analyze_successful_commercials(self, df):
-        successful_ads = df[df['is_successful'] == 1]
-
-        print("\nSuccessful Commercial Characteristics:")
-        print(f"Total successful commercials: {len(successful_ads)}")
-        print(f"Success rate: {(len(successful_ads) / len(df) * 100):.2f}%")
-        print(f"\nAverage cost per impression: {successful_ads['cost_per_impression'].mean():.2f}")
-        print("\nMost common time slots:")
-        print(successful_ads['time_slot'].value_counts())
-        print(f"\nAverage audience size: {successful_ads['audience_data_impressions'].mean():.0f}")
-
-        return successful_ads
+        return train_test_split(X, y, test_size=0.2, random_state=42)
 
     def initialize_models(self):
         self.models = {
             'XGBoost': Pipeline([
                 ('imputer', SimpleImputer(strategy='mean')),
                 ('model', XGBRegressor(
-                    objective='binary:logistic',
                     n_estimators=100,
                     learning_rate=0.1,
                     max_depth=6,
                     random_state=42
                 ))
             ]),
-
             'LightGBM': Pipeline([
                 ('imputer', SimpleImputer(strategy='mean')),
                 ('model', LGBMRegressor(
-                    objective='binary',
                     n_estimators=100,
                     learning_rate=0.1,
                     num_leaves=31,
                     random_state=42
                 ))
             ]),
-
             'RandomForest': Pipeline([
                 ('imputer', SimpleImputer(strategy='mean')),
                 ('model', RandomForestRegressor(
@@ -139,62 +133,60 @@ class TVCommercialClassifier:
         }
 
     def train_and_evaluate(self, X_train, X_test, y_train, y_test):
-        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-
-        best_f1 = 0
+        results_summary = []
 
         for name, pipeline in self.models.items():
             print(f"\nTraining {name}...")
-
             pipeline.fit(X_train, y_train)
-            y_pred = (pipeline.predict(X_test) > 0.5).astype(int)
+            y_pred = pipeline.predict(X_test)
 
-            accuracy = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            f1 = f1_score(y_test, y_pred)
+            # Calculate metrics
+            rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+            mae = mean_absolute_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
 
-            self.results[name] = {
-                'Accuracy': accuracy,
-                'Precision': precision,
-                'Recall': recall,
-                'F1': f1,
-                'model': pipeline
-            }
+            results_summary.append({
+                'Model': name,
+                'RMSE': rmse,
+                'MAE': mae,
+                'R2': r2
+            })
 
-            print(f"{name} Results:")
-            print(f"Accuracy: {accuracy:.4f}")
-            print(f"Precision: {precision:.4f}")
-            print(f"Recall: {recall:.4f}")
-            print(f"F1 Score: {f1:.4f}")
-
+            # Feature importance
             if hasattr(pipeline.named_steps['model'], 'feature_importances_'):
                 feature_importance = pd.DataFrame({
                     'feature': X_train.columns,
                     'importance': pipeline.named_steps['model'].feature_importances_
-                })
-                feature_importance = feature_importance.sort_values('importance', ascending=False)
+                }).sort_values('importance', ascending=False)
                 print("\nTop 5 Important Features:")
                 print(feature_importance.head())
 
-            if f1 > best_f1:
-                best_f1 = f1
-                self.best_model = pipeline
+
+        results_df = pd.DataFrame(results_summary)
+        with open('README.md', 'w') as f:
+            f.write('# TV Commercial Interruption Rate Analysis\n\n')
+            f.write('## Model Performance Metrics\n\n')
+            f.write(results_df.to_markdown())
+
+        return results_df
 
 
 def main():
-
-    classifier = TVCommercialClassifier()
-
-
-    (X_train, X_test, y_train, y_test), preprocessed_df = classifier.load_and_preprocess_data(
-        "interruption_rate_20192020.csv"
-    )
-    successful_ads = classifier.analyze_successful_commercials(preprocessed_df)
+    analyzer = TVInterruptionRateAnalyzer()
 
 
-    classifier.initialize_models()
-    classifier.train_and_evaluate(X_train, X_test, y_train, y_test)
+    df = analyzer.load_and_analyze_data("interruption_rate_20192020.csv")
+
+
+    X_train, X_test, y_train, y_test = analyzer.preprocess_data(df)
+
+
+    analyzer.initialize_models()
+    results = analyzer.train_and_evaluate(X_train, X_test, y_train, y_test)
+
+    print("\nResults saved to README.md")
+    print("\nFinal Results Summary:")
+    print(results)
 
 
 if __name__ == "__main__":
